@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: todo_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-TODO}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-root}
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=en_US.UTF-8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    networks:
+      - todo_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-TODO}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: todo_api
+    restart: unless-stopped
+    environment:
+      ENV: ${ENV:-production}
+      DEBUG: ${DEBUG:-false}
+      DB_NAME: ${DB_NAME:-TODO}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-root}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      APP_RELOAD: ${APP_RELOAD:-false}
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-info}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - todo_network
+    volumes:
+      - ./:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+networks:
+  todo_network:
+    driver: bridge
+    name: todo_network
+
+volumes:
+  postgres_data:
+    name: todo_postgres_data
+  pgadmin_data:
+    name: todo_pgadmin_data
