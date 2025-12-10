@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Tester</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        #log { 
+            border: 1px solid #ccc; 
+            padding: 10px; 
+            height: 400px; 
+            overflow-y: auto;
+            background: #f9f9f9;
+        }
+        .message { 
+            margin: 5px 0; 
+            padding: 5px;
+            border-radius: 3px;
+        }
+        .my-client { background: #e3f2fd; }
+        .other-client { background: #fff3e0; }
+        .system { background: #f1f8e9; }
+        input { width: 300px; padding: 5px; }
+        button { padding: 5px 15px; margin: 5px; }
+        #clientId { 
+            font-weight: bold; 
+            color: #1976d2; 
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>WebSocket Test</h1>
+    <div>
+        <span>Мой ID: <span id="clientId">не подключен</span></span>
+    </div>
+    <div style="margin: 10px 0;">
+        <button onclick="connect()">Подключить</button>
+        <button onclick="disconnect()">Отключить</button>
+    </div>
+    <div style="margin: 10px 0;">
+        <input id="message" type="text" placeholder="Введите сообщение">
+        <button onclick="sendMessage()">Отправить</button>
+    </div>
+    <div id="log"></div>
+
+    <script>
+        let ws = null;
+        let myClientId = null;
+
+        function log(message, className = '') {
+            const logDiv = document.getElementById('log');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${className}`;
+            messageDiv.innerHTML = `<small>${new Date().toLocaleTimeString()}</small>: ${message}`;
+            logDiv.appendChild(messageDiv);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function connect() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('Уже подключено', 'system');
+                return;
+            }
+
+            ws = new WebSocket('ws://localhost:8000/api/ws/tasks');
+            
+            ws.onopen = () => {
+                log('Подключено', 'system');
+            };
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'connected') {
+                    myClientId = data.client_id;
+                    document.getElementById('clientId').textContent = myClientId;
+                    log(`${data.message}`, 'system');
+                } 
+                else if (data.type === 'user_message') {
+                    const isMyMessage = data.client_id === myClientId;
+                    const className = isMyMessage ? 'my-client' : 'other-client';
+                    const prefix = isMyMessage ? '(Я)' : `(${data.client_id})`;
+                    log(`${prefix}: ${data.message}`, className);
+                }
+                else if (data.type === 'task_created') {
+                    log(`Создана задача #${data.data.id}: ${data.data.title}`, 'system');
+                }
+                else if (data.type === 'task_updated') {
+                    log(`Обновлена задача #${data.data.id}: ${data.data.title}`, 'system');
+                }
+                else if (data.type === 'task_deleted') {
+                    log(`Удалена задача #${data.data.id}`, 'system');
+                }
+                else {
+                    log(`${data.type}: ${JSON.stringify(data)}`, 'system');
+                }
+            };
+            
+            ws.onerror = (error) => {
+                log('Ошибка подключения', 'system');
+                console.error(error);
+            };
+            
+            ws.onclose = () => {
+                log('Отключено', 'system');
+                document.getElementById('clientId').textContent = 'не подключен';
+                myClientId = null;
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+            }
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('message');
+            const msg = input.value.trim();
+            
+            if (!msg) return;
+            
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(msg);
+                input.value = '';
+            } else {
+                log('Не подключено к серверу', 'system');
+            }
+        }
+
+        document.getElementById('message').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        window.onload = connect;
+
+        window.onbeforeunload = disconnect;
+    </script>
+</body>
+</html>
